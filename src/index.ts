@@ -4,18 +4,27 @@
 
 import express from "express";
 import { loadConfig } from "./config";
-import { createGitHubClient } from "./github";
-import { createReviewerClient } from "./reviewer";
 import { handleWebhook } from "./webhook";
 
 function main(): void {
-  // TODO:
-  // 1. Load and validate config via loadConfig()
-  // 2. Initialize GitHub client via createGitHubClient()
-  // 3. Initialize Anthropic client via createReviewerClient()
-  // 4. Create Express app
-  // 5. Register POST /webhook route → handleWebhook
-  // 6. Start listening on config.port
+  const config = loadConfig();
+
+  const app = express();
+
+  // Parse JSON bodies (needed for webhook payloads)
+  app.use(express.json());
+
+  // Health check
+  app.get("/health", (_req, res) => {
+    res.json({ status: "ok" });
+  });
+
+  // GitHub webhook endpoint
+  app.post("/webhook", handleWebhook);
+
+  app.listen(config.port, () => {
+    console.log(`pr-reviewer listening on port ${config.port}`);
+  });
 }
 
 main();
