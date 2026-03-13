@@ -5,7 +5,7 @@
 import { App } from "@octokit/app";
 import { Octokit } from "@octokit/rest";
 import { loadConfig, Config } from "./config";
-import { reviewCode } from "./reviewer";
+import { reviewCode, PRContext, FileDiff } from "./reviewer";
 
 export interface PREvent {
   number: number;
@@ -139,17 +139,16 @@ async function postReviewComment(
   });
 }
 
-/** Format PR files into a diff string suitable for AI review. */
-function formatDiffForReview(files: PRFile[]): string {
-  return files
-    .map((file) => {
-      const patch =
-        file.patch.length > MAX_PATCH_LENGTH
-          ? file.patch.slice(0, MAX_PATCH_LENGTH) + "\n... [truncated]"
-          : file.patch;
-      return `### ${file.filename} (${file.status})\n\`\`\`diff\n${patch}\n\`\`\``;
-    })
-    .join("\n\n");
+/** Truncate patches and convert PRFiles to FileDiffs for the reviewer. */
+function toFileDiffs(files: PRFile[]): FileDiff[] {
+  return files.map((file) => ({
+    filename: file.filename,
+    status: file.status,
+    patch:
+      file.patch.length > MAX_PATCH_LENGTH
+        ? file.patch.slice(0, MAX_PATCH_LENGTH) + "\n... [truncated]"
+        : file.patch,
+  }));
 }
 
 /** Orchestrate the full PR review: fetch diff, run AI review, post result. */
@@ -173,13 +172,15 @@ export async function handlePRReview(event: PREvent): Promise<void> {
       `[github] PR #${event.number}: reviewing ${files.length} file(s)`
     );
 
-    const formattedDiff = formatDiffForReview(files);
-    const review = await reviewCode(formattedDiff, {
+    const fileDiffs = toFileDiffs(files);
+    const prContext: PRContext = {
       title: event.title,
       author: event.author,
       baseBranch: event.baseBranch,
       headBranch: event.headBranch,
-    });
+      pullNumber: event.number,
+    };
+    const review = await reviewCode(prContext, fileDiffs);
 
     await postReviewComment(octokit, owner, repo, event.number, review);
 
