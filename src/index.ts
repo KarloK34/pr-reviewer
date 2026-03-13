@@ -4,23 +4,24 @@
 
 import express from "express";
 import { loadConfig } from "./config";
-import { handleWebhook } from "./webhook";
+import { createWebhookRouter } from "./webhook";
 
 function main(): void {
   const config = loadConfig();
 
   const app = express();
 
-  // Parse JSON bodies (needed for webhook payloads)
+  // Mount webhook router before express.json() — it uses express.raw() internally
+  // so it can verify the HMAC signature against the raw body.
+  app.use("/webhook", createWebhookRouter(config));
+
+  // Parse JSON for all other routes
   app.use(express.json());
 
   // Health check
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
   });
-
-  // GitHub webhook endpoint
-  app.post("/webhook", handleWebhook);
 
   app.listen(config.port, () => {
     console.log(`pr-reviewer listening on port ${config.port}`);
