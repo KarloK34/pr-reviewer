@@ -93,6 +93,12 @@ npm run dev
 
 This uses `ts-node-dev` to watch for file changes and restart automatically.
 
+For development with a tunnel, open a second terminal:
+
+```bash
+npm run tunnel
+```
+
 ### Production
 
 ```bash
@@ -100,24 +106,140 @@ npm run build
 npm start
 ```
 
-### With PM2
+## Mac Mini deployment
+
+### First-time setup
+
+1. SSH into the Mac Mini:
 
 ```bash
-npm run build
-pm2 start pm2.config.js
+ssh user@mac-mini-ip
 ```
 
-PM2 manages two processes:
-- **pr-reviewer** — the Express webhook server
-- **pr-reviewer-tunnel** — the Cloudflare tunnel + webhook URL updater
+2. Clone the repo and configure:
 
 ```bash
-pm2 status              # check both processes
-pm2 logs                # view all logs
-pm2 logs pr-reviewer    # server logs only
-pm2 logs pr-reviewer-tunnel  # tunnel logs only
+git clone <repo-url> pr-reviewer
+cd pr-reviewer
+cp .env.example .env
+# Edit .env with your values
+# Place the .pem file and set GITHUB_PRIVATE_KEY_PATH
+```
+
+3. Install prerequisites:
+
+```bash
+# Node.js (if not installed)
+brew install node
+
+# PM2
+npm install -g pm2
+
+# Cloudflare tunnel
+brew install cloudflare/cloudflare/cloudflared
+```
+
+4. Deploy:
+
+```bash
+./deploy.sh
+```
+
+The deploy script will:
+- Install npm dependencies
+- Build the TypeScript project
+- Start both PM2 processes (server + tunnel)
+- Save the PM2 process list
+- Print instructions for setting up auto-start on reboot
+
+5. Set up auto-start on reboot (one-time):
+
+```bash
+pm2 startup
+# Copy and run the command it outputs (requires sudo)
+pm2 save
+```
+
+### Viewing logs
+
+```bash
+# All logs
+pm2 logs
+
+# Server logs only
+pm2 logs pr-reviewer
+
+# Tunnel logs only
+pm2 logs pr-reviewer-tunnel
+
+# Log files are also saved to:
+#   logs/pr-reviewer-out.log
+#   logs/pr-reviewer-error.log
+#   logs/pr-reviewer-tunnel-out.log
+#   logs/pr-reviewer-tunnel-error.log
+```
+
+### Finding the current tunnel URL
+
+The tunnel URL changes each time cloudflared restarts. Find the current one:
+
+```bash
+pm2 logs pr-reviewer-tunnel --lines 50 | grep trycloudflare.com
+```
+
+You don't need to manually update webhooks — the tunnel manager automatically updates GitHub and GitLab webhook URLs whenever a new tunnel URL is detected.
+
+### Managing processes
+
+```bash
+# Check status of both processes
+pm2 status
+
+# Restart the server
+pm2 restart pr-reviewer
+
+# Restart the tunnel (will get a new URL and auto-update webhooks)
+pm2 restart pr-reviewer-tunnel
+
+# Restart both
 pm2 restart all
+
+# Stop both
 pm2 stop all
+```
+
+### Updating configuration
+
+To add or remove repos from `GITHUB_REPOS` or `GITLAB_REPOS`:
+
+1. SSH into the Mac Mini
+2. Edit the `.env` file
+3. Restart both processes:
+
+```bash
+pm2 restart all
+```
+
+### Redeploying after code changes
+
+```bash
+ssh user@mac-mini-ip
+cd pr-reviewer
+git pull
+./deploy.sh
+```
+
+### Verifying the deployment
+
+Once the tunnel is up:
+
+```bash
+# Find the tunnel URL
+pm2 logs pr-reviewer-tunnel --lines 50 | grep trycloudflare.com
+
+# Health check
+curl https://<tunnel-url>/health
+# Should return: {"status":"ok"}
 ```
 
 ## Tunnel manager
@@ -127,35 +249,9 @@ The tunnel manager replaces manually running `cloudflared`. It:
 1. Spawns `cloudflared tunnel --url http://localhost:3000`
 2. Detects the generated `*.trycloudflare.com` URL
 3. Automatically updates the webhook URL on GitHub (via `PATCH /app/hook/config`) and GitLab (via project hooks API)
-4. Restarts `cloudflared` automatically if it crashes
+4. Restarts `cloudflared` automatically if it crashes (with a 5s delay)
 
-### Usage
-
-Run it alongside the dev server in a separate terminal:
-
-```bash
-# Terminal 1 — server
-npm run dev
-
-# Terminal 2 — tunnel
-npm run tunnel
-```
-
-### Prerequisites
-
-Install cloudflared:
-
-```bash
-# macOS
-brew install cloudflare/cloudflare/cloudflared
-
-# Linux
-# See https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
-```
-
-### For Mac Mini deployment
-
-Use PM2 to manage both processes (see "With PM2" above). PM2 will restart either process if it crashes.
+PM2 also restarts the tunnel manager itself if it crashes (max 10 restarts).
 
 ## Testing locally
 
