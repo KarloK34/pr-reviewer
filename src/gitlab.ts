@@ -1,12 +1,11 @@
 // gitlab.ts — GitLab API interactions
 // Uses the GitLab REST API with a personal/project access token.
 
+import http from "http";
 import https from "https";
 import { GitLabConfig } from "./config";
 import { reviewCode, PRContext, FileDiff } from "./reviewer";
 import { isIgnoredFile, MAX_PATCH_LENGTH } from "./filter";
-
-const GITLAB_API_BASE = "https://gitlab.com/api/v4";
 
 export interface MREvent {
   iid: number;
@@ -24,18 +23,19 @@ interface MRFile {
   patch: string;
 }
 
-/** Make an HTTPS request to the GitLab API. */
+/** Make an HTTP/HTTPS request to the GitLab API. */
 function gitlabRequest(
   method: string,
-  path: string,
+  url: string,
   token: string,
   body?: string
 ): Promise<{ statusCode: number; data: string }> {
-  const url = new URL(path, GITLAB_API_BASE);
+  const parsed = new URL(url);
+  const transport = parsed.protocol === "https:" ? https : http;
 
   return new Promise((resolve, reject) => {
-    const req = https.request(
-      url,
+    const req = transport.request(
+      parsed,
       {
         method,
         headers: {
@@ -74,10 +74,10 @@ function mapDiffStatus(
 async function getMRFiles(
   projectId: number,
   mrIid: number,
-  token: string
+  gitlabConfig: GitLabConfig
 ): Promise<MRFile[]> {
-  const path = `${GITLAB_API_BASE}/projects/${projectId}/merge_requests/${mrIid}/changes`;
-  const { statusCode, data } = await gitlabRequest("GET", path, token);
+  const url = `${gitlabConfig.url}/api/v4/projects/${projectId}/merge_requests/${mrIid}/changes`;
+  const { statusCode, data } = await gitlabRequest("GET", url, gitlabConfig.accessToken);
 
   if (statusCode !== 200) {
     throw new Error(
@@ -113,14 +113,14 @@ async function postMRComment(
   projectId: number,
   mrIid: number,
   body: string,
-  token: string
+  gitlabConfig: GitLabConfig
 ): Promise<void> {
-  const path = `${GITLAB_API_BASE}/projects/${projectId}/merge_requests/${mrIid}/notes`;
+  const url = `${gitlabConfig.url}/api/v4/projects/${projectId}/merge_requests/${mrIid}/notes`;
   const payload = JSON.stringify({ body });
   const { statusCode, data } = await gitlabRequest(
     "POST",
-    path,
-    token,
+    url,
+    gitlabConfig.accessToken,
     payload
   );
 
@@ -156,7 +156,7 @@ export async function handleMRReview(
     const files = await getMRFiles(
       event.projectId,
       event.iid,
-      gitlabConfig.accessToken
+      gitlabConfig
     );
 
     if (files.length === 0) {
@@ -184,7 +184,7 @@ export async function handleMRReview(
       event.projectId,
       event.iid,
       review,
-      gitlabConfig.accessToken
+      gitlabConfig
     );
 
     console.log(`[gitlab] MR !${event.iid}: review posted successfully`);

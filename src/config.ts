@@ -13,6 +13,7 @@ export interface RepoRef {
 }
 
 export interface GitLabConfig {
+  url: string; // Base URL, e.g. "https://gitlab.com" or "https://gitlab.company.com"
   accessToken: string;
   webhookSecret: string;
   repos: string[]; // "namespace/repo" format
@@ -106,7 +107,14 @@ function loadGitLabConfig(): GitLabConfig | null {
     );
   }
 
+  // Default to gitlab.com, strip trailing slash
+  const url = (process.env.GITLAB_URL || "https://gitlab.com").replace(
+    /\/+$/,
+    ""
+  );
+
   return {
+    url,
     accessToken,
     webhookSecret,
     repos: parseGitLabRepos(reposRaw),
