@@ -1,10 +1,10 @@
 // github.ts — GitHub API interactions
-// Uses @octokit/app to authenticate as a GitHub App and @octokit/rest
-// to fetch PR diffs and post review comments.
+// Authenticates as a GitHub App using manual JWT + installation token flow.
+// Uses @octokit/rest for all API calls.
 
-import { App } from "@octokit/app";
+import jwt from "jsonwebtoken";
 import { Octokit } from "@octokit/rest";
-import { loadConfig, Config } from "./config";
+import { loadConfig } from "./config";
 import { reviewCode, PRContext, FileDiff } from "./reviewer";
 
 export interface PREvent {
@@ -47,17 +47,20 @@ function isIgnoredFile(filename: string): boolean {
   return IGNORED_EXTENSIONS.some((ext) => lower.endsWith(ext));
 }
 
-let app: App | null = null;
+/** Create a short-lived JWT to authenticate as the GitHub App. */
+function createAppJWT(): string {
+  const config = loadConfig();
+  const now = Math.floor(Date.now() / 1000);
 
-function getApp(): App {
-  if (!app) {
-    const config = loadConfig();
-    app = new App({
-      appId: config.githubAppId,
-      privateKey: config.githubPrivateKey,
-    });
-  }
-  return app;
+  return jwt.sign(
+    {
+      iat: now - 60, // issued 60s in the past to account for clock drift
+      exp: now + 10 * 60, // expires in 10 minutes (max allowed)
+      iss: config.githubAppId,
+    },
+    config.githubPrivateKey,
+    { algorithm: "RS256" }
+  );
 }
 
 /** Get an authenticated Octokit instance for the given repository installation. */
@@ -65,21 +68,20 @@ async function getInstallationOctokit(
   owner: string,
   repo: string
 ): Promise<Octokit> {
-  const githubApp = getApp();
+  const appJwt = createAppJWT();
 
-  // Find the installation for this repository
-  const {
-    data: installation,
-  } = await (githubApp.octokit as Octokit).rest.apps.getRepoInstallation({
-    owner,
-    repo,
-  });
+  // Use the JWT to find the installation for this repo
+  const appOctokit = new Octokit({ auth: appJwt });
+  const { data: installation } =
+    await appOctokit.rest.apps.getRepoInstallation({ owner, repo });
 
-  const octokit = (await githubApp.getInstallationOctokit(
-    installation.id
-  )) as unknown as Octokit;
+  // Exchange the JWT for a scoped installation access token
+  const { data: tokenData } =
+    await appOctokit.rest.apps.createInstallationAccessToken({
+      installation_id: installation.id,
+    });
 
-  return octokit;
+  return new Octokit({ auth: tokenData.token });
 }
 
 /** Fetch the list of changed files for a PR, filtering out non-reviewable files. */
@@ -92,7 +94,6 @@ async function getPRFiles(
   const files: PRFile[] = [];
   let page = 1;
 
-  // Paginate through all files
   while (true) {
     const { data } = await octokit.rest.pulls.listFiles({
       owner,
@@ -106,7 +107,7 @@ async function getPRFiles(
 
     for (const file of data) {
       if (isIgnoredFile(file.filename)) continue;
-      if (!file.patch) continue; // binary files or files with no diff
+      if (!file.patch) continue;
 
       files.push({
         filename: file.filename,

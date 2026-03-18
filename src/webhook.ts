@@ -69,6 +69,21 @@ export function createWebhookRouter(config: Config): Router {
       return;
     }
 
+    // Check if the repo is in the allowed list
+    const repoFullName: string = payload.repository?.full_name ?? "";
+    const allowedRepos = config.githubRepos.map(
+      (r) => `${r.owner}/${r.repo}`
+    );
+    if (!allowedRepos.includes(repoFullName)) {
+      console.log(
+        `[webhook] Repo "${repoFullName}" is not in the allowed list, skipping`
+      );
+      res
+        .status(200)
+        .json({ ignored: true, reason: `repo not allowed: ${repoFullName}` });
+      return;
+    }
+
     const action: string = payload.action;
     if (action !== "opened" && action !== "synchronize") {
       console.log(`[webhook] Ignoring pull_request action: ${action}`);

@@ -1,5 +1,5 @@
 // simulate-webhook.ts — Send a fake pull_request webhook to the local server
-// Usage: npx ts-node test/simulate-webhook.ts <pr-number>
+// Usage: npx ts-node test/simulate-webhook.ts <pr-number> [owner/repo]
 
 import crypto from "crypto";
 import http from "http";
@@ -9,7 +9,9 @@ dotenv.config();
 
 const prNumber = parseInt(process.argv[2], 10);
 if (!prNumber || isNaN(prNumber)) {
-  console.error("Usage: ts-node test/simulate-webhook.ts <pr-number>");
+  console.error(
+    "Usage: ts-node test/simulate-webhook.ts <pr-number> [owner/repo]"
+  );
   process.exit(1);
 }
 
@@ -19,8 +21,26 @@ if (!secret) {
   process.exit(1);
 }
 
-const repo = process.env.GITHUB_REPO || "owner/repo-name";
-const [owner, repoName] = repo.split("/");
+// Use CLI arg or default to the first repo in GITHUB_REPOS
+let repoFullName = process.argv[3];
+if (!repoFullName) {
+  const reposRaw = process.env.GITHUB_REPOS || "";
+  const firstRepo = reposRaw.split(",")[0]?.trim();
+  if (!firstRepo) {
+    console.error(
+      "No repo specified and GITHUB_REPOS is not set in .env"
+    );
+    process.exit(1);
+  }
+  repoFullName = firstRepo;
+}
+
+const [owner, repoName] = repoFullName.split("/");
+if (!owner || !repoName) {
+  console.error(`Invalid repo format: "${repoFullName}" (expected owner/repo)`);
+  process.exit(1);
+}
+
 const port = process.env.PORT || "3000";
 
 const payload = JSON.stringify({

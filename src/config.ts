@@ -7,13 +7,18 @@ import fs from "fs";
 
 dotenv.config();
 
+export interface RepoRef {
+  owner: string;
+  repo: string;
+}
+
 export interface Config {
   port: number;
   anthropicApiKey: string;
   githubAppId: string;
   githubWebhookSecret: string;
   githubPrivateKey: string;
-  githubRepo: { owner: string; repo: string };
+  githubRepos: RepoRef[];
 }
 
 function requireEnv(name: string): string {
@@ -24,13 +29,38 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function parseRepos(raw: string): RepoRef[] {
+  const repos: RepoRef[] = [];
+
+  for (const entry of raw.split(",")) {
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+
+    const parts = trimmed.split("/");
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      throw new Error(
+        `GITHUB_REPOS: each entry must be "owner/repo", got: "${trimmed}"`
+      );
+    }
+    repos.push({ owner: parts[0], repo: parts[1] });
+  }
+
+  if (repos.length === 0) {
+    throw new Error(
+      "GITHUB_REPOS must contain at least one repository (e.g. owner/repo1,owner/repo2)"
+    );
+  }
+
+  return repos;
+}
+
 /** Load and validate all required environment variables. */
 export function loadConfig(): Config {
   const anthropicApiKey = requireEnv("ANTHROPIC_API_KEY");
   const githubAppId = requireEnv("GITHUB_APP_ID");
   const githubWebhookSecret = requireEnv("GITHUB_WEBHOOK_SECRET");
   const githubPrivateKeyPath = requireEnv("GITHUB_PRIVATE_KEY_PATH");
-  const githubRepoRaw = requireEnv("GITHUB_REPO");
+  const githubReposRaw = requireEnv("GITHUB_REPOS");
 
   const port = parseInt(process.env.PORT || "3000", 10);
   if (isNaN(port)) {
@@ -45,13 +75,7 @@ export function loadConfig(): Config {
   }
   const githubPrivateKey = fs.readFileSync(githubPrivateKeyPath, "utf-8");
 
-  // Parse owner/repo
-  const parts = githubRepoRaw.split("/");
-  if (parts.length !== 2 || !parts[0] || !parts[1]) {
-    throw new Error(
-      `GITHUB_REPO must be in "owner/repo" format, got: ${githubRepoRaw}`
-    );
-  }
+  const githubRepos = parseRepos(githubReposRaw);
 
   return {
     port,
@@ -59,6 +83,6 @@ export function loadConfig(): Config {
     githubAppId,
     githubWebhookSecret,
     githubPrivateKey,
-    githubRepo: { owner: parts[0], repo: parts[1] },
+    githubRepos,
   };
 }
