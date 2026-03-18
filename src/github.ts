@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 import { Octokit } from "@octokit/rest";
 import { loadConfig } from "./config";
 import { reviewCode, PRContext, FileDiff } from "./reviewer";
+import { isIgnoredFile, MAX_PATCH_LENGTH } from "./filter";
 
 export interface PREvent {
   number: number;
@@ -20,31 +21,6 @@ export interface PRFile {
   filename: string;
   status: string;
   patch: string;
-}
-
-const MAX_PATCH_LENGTH = 3000;
-
-const IGNORED_EXTENSIONS = [
-  ".g.dart",
-  ".freezed.dart",
-  ".mocks.dart",
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".bmp",
-  ".ico",
-  ".svg",
-  ".webp",
-];
-
-const IGNORED_FILENAMES = ["pubspec.lock"];
-
-function isIgnoredFile(filename: string): boolean {
-  if (IGNORED_FILENAMES.includes(filename.split("/").pop() || "")) return true;
-  if (filename.startsWith("assets/")) return true;
-  const lower = filename.toLowerCase();
-  return IGNORED_EXTENSIONS.some((ext) => lower.endsWith(ext));
 }
 
 /** Create a short-lived JWT to authenticate as the GitHub App. */

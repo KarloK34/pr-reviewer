@@ -12,6 +12,12 @@ export interface RepoRef {
   repo: string;
 }
 
+export interface GitLabConfig {
+  accessToken: string;
+  webhookSecret: string;
+  repos: string[]; // "namespace/repo" format
+}
+
 export interface Config {
   port: number;
   anthropicApiKey: string;
@@ -19,6 +25,7 @@ export interface Config {
   githubWebhookSecret: string;
   githubPrivateKey: string;
   githubRepos: RepoRef[];
+  gitlab: GitLabConfig | null;
 }
 
 function requireEnv(name: string): string {
@@ -29,7 +36,7 @@ function requireEnv(name: string): string {
   return value;
 }
 
-function parseRepos(raw: string): RepoRef[] {
+function parseRepos(raw: string, envName: string): RepoRef[] {
   const repos: RepoRef[] = [];
 
   for (const entry of raw.split(",")) {
@@ -39,7 +46,7 @@ function parseRepos(raw: string): RepoRef[] {
     const parts = trimmed.split("/");
     if (parts.length !== 2 || !parts[0] || !parts[1]) {
       throw new Error(
-        `GITHUB_REPOS: each entry must be "owner/repo", got: "${trimmed}"`
+        `${envName}: each entry must be "owner/repo", got: "${trimmed}"`
       );
     }
     repos.push({ owner: parts[0], repo: parts[1] });
@@ -47,11 +54,63 @@ function parseRepos(raw: string): RepoRef[] {
 
   if (repos.length === 0) {
     throw new Error(
-      "GITHUB_REPOS must contain at least one repository (e.g. owner/repo1,owner/repo2)"
+      `${envName} must contain at least one repository (e.g. owner/repo1,owner/repo2)`
     );
   }
 
   return repos;
+}
+
+function parseGitLabRepos(raw: string): string[] {
+  const repos: string[] = [];
+
+  for (const entry of raw.split(",")) {
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+
+    if (!trimmed.includes("/")) {
+      throw new Error(
+        `GITLAB_REPOS: each entry must be "namespace/repo", got: "${trimmed}"`
+      );
+    }
+    repos.push(trimmed);
+  }
+
+  if (repos.length === 0) {
+    throw new Error(
+      "GITLAB_REPOS must contain at least one repository (e.g. namespace/repo1,namespace/repo2)"
+    );
+  }
+
+  return repos;
+}
+
+function loadGitLabConfig(): GitLabConfig | null {
+  const accessToken = process.env.GITLAB_ACCESS_TOKEN;
+  const webhookSecret = process.env.GITLAB_WEBHOOK_SECRET;
+  const reposRaw = process.env.GITLAB_REPOS;
+
+  // All three must be set to enable GitLab support
+  if (!accessToken && !webhookSecret && !reposRaw) {
+    return null;
+  }
+
+  if (!accessToken || !webhookSecret || !reposRaw) {
+    const missing = [
+      !accessToken && "GITLAB_ACCESS_TOKEN",
+      !webhookSecret && "GITLAB_WEBHOOK_SECRET",
+      !reposRaw && "GITLAB_REPOS",
+    ].filter(Boolean);
+    throw new Error(
+      `Partial GitLab configuration: missing ${missing.join(", ")}. Set all GITLAB_* variables or none.`
+    );
+  }
+
+  return {
+    accessToken,
+    webhookSecret,
+    repos: parseGitLabRepos(reposRaw),
+  };
 }
 
 /** Load and validate all required environment variables. */
@@ -75,7 +134,14 @@ export function loadConfig(): Config {
   }
   const githubPrivateKey = fs.readFileSync(githubPrivateKeyPath, "utf-8");
 
-  const githubRepos = parseRepos(githubReposRaw);
+  const githubRepos = parseRepos(githubReposRaw, "GITHUB_REPOS");
+  const gitlab = loadGitLabConfig();
+
+  if (gitlab) {
+    console.log(
+      `[config] GitLab support enabled for ${gitlab.repos.length} repo(s)`
+    );
+  }
 
   return {
     port,
@@ -84,5 +150,6 @@ export function loadConfig(): Config {
     githubWebhookSecret,
     githubPrivateKey,
     githubRepos,
+    gitlab,
   };
 }

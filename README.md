@@ -1,6 +1,6 @@
 # pr-reviewer
 
-Automated GitHub PR reviewer powered by Claude AI. Runs as a GitHub App that listens for pull request webhooks, analyzes diffs using Claude, and posts code review comments — focused on Flutter/Dart best practices.
+Automated PR/MR reviewer powered by Claude AI. Supports both **GitHub** and **GitLab**. Listens for webhooks, analyzes diffs using Claude, and posts code review comments — focused on Flutter/Dart best practices.
 
 Supports multiple repositories from a single instance.
 
@@ -20,6 +20,8 @@ cp .env.example .env
 
 Fill in the values in `.env`:
 
+#### GitHub (required)
+
 | Variable                  | Description                                             |
 | ------------------------- | ------------------------------------------------------- |
 | `PORT`                    | Server port (default: 3000)                             |
@@ -29,15 +31,26 @@ Fill in the values in `.env`:
 | `GITHUB_PRIVATE_KEY_PATH` | Path to the `.pem` private key file                     |
 | `GITHUB_REPOS`            | Comma-separated list of repos in `owner/repo` format    |
 
+#### GitLab (optional)
+
+| Variable                | Description                                                  |
+| ----------------------- | ------------------------------------------------------------ |
+| `GITLAB_ACCESS_TOKEN`   | Personal or project access token with `api` scope            |
+| `GITLAB_WEBHOOK_SECRET` | Secret token configured in the GitLab webhook settings       |
+| `GITLAB_REPOS`          | Comma-separated list of repos in `namespace/repo` format     |
+
+GitLab support is **disabled by default**. Set all three `GITLAB_*` variables to enable it. If only some are set, the server will throw an error on startup.
+
 #### Multi-repo configuration
 
-Set `GITHUB_REPOS` to a comma-separated list of all repositories you want reviewed:
-
 ```
-GITHUB_REPOS=cobeisfresh/DnevnikHr,cobeisfresh/AnotherApp,cobeisfresh/ThirdApp
+GITHUB_REPOS=cobeisfresh/DnevnikHr,cobeisfresh/AnotherApp
+GITLAB_REPOS=cobeisfresh/mobile-app,cobeisfresh/backend-api
 ```
 
-The GitHub App must be **installed on every repository** listed here. Webhooks from repos not in this list are ignored.
+The GitHub App must be **installed on every GitHub repository** listed. The GitLab access token must have access to all listed GitLab projects.
+
+Webhooks from repos not in these lists are ignored.
 
 ### 3. GitHub App private key
 
@@ -50,6 +63,14 @@ GITHUB_PRIVATE_KEY_PATH=./your-app-name.2024-01-01.private-key.pem
 ```
 
 > The `.gitignore` already excludes `*.pem` files.
+
+### 4. GitLab webhook setup
+
+1. Go to your GitLab project → Settings → Webhooks.
+2. Set the URL to `https://your-server/webhook/gitlab`.
+3. Set the secret token to match `GITLAB_WEBHOOK_SECRET`.
+4. Check **Merge request events**.
+5. Save. Repeat for each project in `GITLAB_REPOS`.
 
 ## Running
 
@@ -92,19 +113,32 @@ Use the simulate script to send a fake webhook to your running server:
 # Start the server first
 npm run dev
 
-# In another terminal, send a test webhook for PR #42 (uses first repo in GITHUB_REPOS)
+# --- GitHub ---
+# Send a test webhook for PR #42 (uses first repo in GITHUB_REPOS)
 npm run simulate -- 42
 
 # Or specify a repo explicitly
 npm run simulate -- 42 cobeisfresh/DnevnikHr
+
+# --- GitLab ---
+# Send a test webhook for MR !15 (uses first repo in GITLAB_REPOS)
+npm run simulate -- --gitlab 15
+
+# Or specify a repo explicitly
+npm run simulate -- --gitlab 15 cobeisfresh/mobile-app
 ```
 
-This reads `GITHUB_WEBHOOK_SECRET` from your `.env` to sign the payload correctly. The server must be running for the request to succeed.
+## Webhook endpoints
+
+| Endpoint            | Source | Verified by                    |
+| ------------------- | ------ | ------------------------------ |
+| `POST /webhook`     | GitHub | `X-Hub-Signature-256` (HMAC)   |
+| `POST /webhook/gitlab` | GitLab | `X-Gitlab-Token` (shared secret) |
 
 ## How it works
 
-1. GitHub sends a `pull_request` webhook when a PR is opened or updated on any installed repo.
-2. The server verifies the webhook signature and checks if the repo is in the allowed `GITHUB_REPOS` list.
-3. Changed files are fetched via the GitHub API (generated/binary files are filtered out).
+1. GitHub/GitLab sends a webhook when a PR/MR is opened or updated on any configured repo.
+2. The server verifies the webhook signature/token and checks the repo against the allowed list.
+3. Changed files are fetched via the respective API (generated/binary files are filtered out).
 4. The diffs are sent to Claude for review.
-5. Claude's review is posted back as a PR comment.
+5. Claude's review is posted back as a PR review comment (GitHub) or MR note (GitLab).
