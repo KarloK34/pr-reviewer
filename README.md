@@ -35,11 +35,20 @@ Fill in the values in `.env`:
 
 | Variable                | Description                                                  |
 | ----------------------- | ------------------------------------------------------------ |
+| `GITLAB_URL`            | GitLab instance URL (default: `https://gitlab.com`)          |
 | `GITLAB_ACCESS_TOKEN`   | Personal or project access token with `api` scope            |
 | `GITLAB_WEBHOOK_SECRET` | Secret token configured in the GitLab webhook settings       |
 | `GITLAB_REPOS`          | Comma-separated list of repos in `namespace/repo` format     |
 
-GitLab support is **disabled by default**. Set all three `GITLAB_*` variables to enable it. If only some are set, the server will throw an error on startup.
+GitLab support is **disabled by default**. Set all three `GITLAB_*` credential/repo variables to enable it. If only some are set, the server will throw an error on startup.
+
+#### Tunnel manager (optional)
+
+| Variable              | Description                                                      |
+| --------------------- | ---------------------------------------------------------------- |
+| `GITHUB_APP_HOOK_ID`  | The GitHub App webhook ID (found in App settings → Advanced)     |
+
+Only needed if you use `npm run tunnel` to auto-update webhook URLs.
 
 #### Multi-repo configuration
 
@@ -72,6 +81,8 @@ GITHUB_PRIVATE_KEY_PATH=./your-app-name.2024-01-01.private-key.pem
 4. Check **Merge request events**.
 5. Save. Repeat for each project in `GITLAB_REPOS`.
 
+> If you use the tunnel manager (`npm run tunnel`), it will create/update GitLab webhooks automatically.
+
 ## Running
 
 ### Development (with auto-reload)
@@ -96,14 +107,55 @@ npm run build
 pm2 start pm2.config.js
 ```
 
-Other useful PM2 commands:
+PM2 manages two processes:
+- **pr-reviewer** — the Express webhook server
+- **pr-reviewer-tunnel** — the Cloudflare tunnel + webhook URL updater
 
 ```bash
-pm2 status        # check status
-pm2 logs pr-reviewer  # view logs
-pm2 restart pr-reviewer
-pm2 stop pr-reviewer
+pm2 status              # check both processes
+pm2 logs                # view all logs
+pm2 logs pr-reviewer    # server logs only
+pm2 logs pr-reviewer-tunnel  # tunnel logs only
+pm2 restart all
+pm2 stop all
 ```
+
+## Tunnel manager
+
+The tunnel manager replaces manually running `cloudflared`. It:
+
+1. Spawns `cloudflared tunnel --url http://localhost:3000`
+2. Detects the generated `*.trycloudflare.com` URL
+3. Automatically updates the webhook URL on GitHub (via `PATCH /app/hook/config`) and GitLab (via project hooks API)
+4. Restarts `cloudflared` automatically if it crashes
+
+### Usage
+
+Run it alongside the dev server in a separate terminal:
+
+```bash
+# Terminal 1 — server
+npm run dev
+
+# Terminal 2 — tunnel
+npm run tunnel
+```
+
+### Prerequisites
+
+Install cloudflared:
+
+```bash
+# macOS
+brew install cloudflare/cloudflare/cloudflared
+
+# Linux
+# See https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+```
+
+### For Mac Mini deployment
+
+Use PM2 to manage both processes (see "With PM2" above). PM2 will restart either process if it crashes.
 
 ## Testing locally
 
@@ -130,10 +182,10 @@ npm run simulate -- --gitlab 15 cobeisfresh/mobile-app
 
 ## Webhook endpoints
 
-| Endpoint            | Source | Verified by                    |
-| ------------------- | ------ | ------------------------------ |
-| `POST /webhook`     | GitHub | `X-Hub-Signature-256` (HMAC)   |
-| `POST /webhook/gitlab` | GitLab | `X-Gitlab-Token` (shared secret) |
+| Endpoint                | Source | Verified by                      |
+| ----------------------- | ------ | -------------------------------- |
+| `POST /webhook`         | GitHub | `X-Hub-Signature-256` (HMAC)     |
+| `POST /webhook/gitlab`  | GitLab | `X-Gitlab-Token` (shared secret) |
 
 ## How it works
 

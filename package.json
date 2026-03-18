@@ -7,7 +7,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "npx ts-node-dev --respawn --transpile-only src/index.ts",
-    "simulate": "npx ts-node test/simulate-webhook.ts"
+    "simulate": "npx ts-node test/simulate-webhook.ts",
+    "tunnel": "npx ts-node src/tunnel-manager.ts"
   },
   "keywords": [],
   "author": "",
