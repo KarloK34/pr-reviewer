@@ -4,7 +4,6 @@
 
 import { spawn, ChildProcess } from "child_process";
 import jwt from "jsonwebtoken";
-import { Octokit } from "@octokit/rest";
 import http from "http";
 import https from "https";
 import { loadConfig, Config, GitLabConfig } from "./config";
@@ -36,23 +35,44 @@ async function updateGitHubWebhook(
   tunnelUrl: string,
   config: Config
 ): Promise<void> {
-  try {
-    const appJwt = createAppJWT(config);
-    const octokit = new Octokit({ auth: appJwt });
+  const appJwt = createAppJWT(config);
+  const webhookUrl = `${tunnelUrl}/webhook`;
+  const body = JSON.stringify({ url: webhookUrl, content_type: "json" });
 
-    const webhookUrl = `${tunnelUrl}/webhook`;
+  const { statusCode, data } = await new Promise<{
+    statusCode: number;
+    data: string;
+  }>((resolve, reject) => {
+    const req = https.request(
+      "https://api.github.com/app/hook/config",
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${appJwt}`,
+          Accept: "application/vnd.github.v3+json",
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+          "User-Agent": "pr-reviewer-tunnel",
+        },
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => resolve({ statusCode: res.statusCode ?? 0, data }));
+      }
+    );
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
 
-    await octokit.request("PATCH /app/hook/config", {
-      url: webhookUrl,
-      content_type: "json",
-    });
-
-    console.log(`[tunnel] GitHub App webhook updated → ${webhookUrl}`);
-  } catch (err: any) {
-    console.error(
-      `[tunnel] Failed to update GitHub webhook: ${err.message ?? err}`
+  if (statusCode !== 200) {
+    throw new Error(
+      `GitHub API returned ${statusCode}: ${data}`
     );
   }
+
+  console.log(`[tunnel] GitHub App webhook updated → ${webhookUrl}`);
 }
 
 // ── GitLab webhook update ───────────────────────────────────────────
