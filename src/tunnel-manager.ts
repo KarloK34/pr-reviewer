@@ -186,16 +186,54 @@ async function updateGitLabWebhooks(
 
 // ── Webhook URL update orchestrator ─────────────────────────────────
 
+const DNS_DELAY_MS = 30_000;
+const RETRY_DELAY_MS = 10_000;
+const MAX_RETRIES = 3;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withRetry(
+  label: string,
+  fn: () => Promise<void>
+): Promise<void> {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await fn();
+      return;
+    } catch (err: any) {
+      if (attempt < MAX_RETRIES) {
+        console.error(
+          `[tunnel] ${label} failed (attempt ${attempt}/${MAX_RETRIES}): ${err.message ?? err}. Retrying in ${RETRY_DELAY_MS / 1000}s...`
+        );
+        await sleep(RETRY_DELAY_MS);
+      } else {
+        console.error(
+          `[tunnel] ${label} failed after ${MAX_RETRIES} attempts: ${err.message ?? err}`
+        );
+      }
+    }
+  }
+}
+
 async function onTunnelUrlDetected(
   tunnelUrl: string,
   config: Config
 ): Promise<void> {
-  console.log(`[tunnel] Detected tunnel URL: ${tunnelUrl}`);
+  console.log(
+    `[tunnel] Tunnel URL detected: ${tunnelUrl}. Waiting ${DNS_DELAY_MS / 1000} seconds for DNS propagation...`
+  );
+  await sleep(DNS_DELAY_MS);
 
-  await updateGitHubWebhook(tunnelUrl, config);
+  await withRetry("GitHub webhook update", () =>
+    updateGitHubWebhook(tunnelUrl, config)
+  );
 
   if (config.gitlab) {
-    await updateGitLabWebhooks(tunnelUrl, config.gitlab);
+    await withRetry("GitLab webhook update", () =>
+      updateGitLabWebhooks(tunnelUrl, config.gitlab!)
+    );
   }
 }
 
