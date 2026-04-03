@@ -13,12 +13,20 @@ const args = process.argv.slice(2);
 const isGitLab = args[0] === "--gitlab";
 if (isGitLab) args.shift();
 
+// Extract --project-id <id> from args
+let projectId = 12345;
+const pidIdx = args.indexOf("--project-id");
+if (pidIdx !== -1) {
+  projectId = parseInt(args[pidIdx + 1], 10);
+  args.splice(pidIdx, 2);
+}
+
 const mrNumber = parseInt(args[0], 10);
 if (!mrNumber || isNaN(mrNumber)) {
   console.error(
     "Usage:\n" +
       "  GitHub: ts-node test/simulate-webhook.ts <pr-number> [owner/repo]\n" +
-      "  GitLab: ts-node test/simulate-webhook.ts --gitlab <mr-iid> [namespace/repo]"
+      "  GitLab: ts-node test/simulate-webhook.ts --gitlab <mr-iid> [--project-id <id>] [namespace/repo]"
   );
   process.exit(1);
 }
@@ -91,7 +99,7 @@ if (isGitLab) {
     event_type: "merge_request",
     user: { username: "test-author" },
     project: {
-      id: 12345,
+      id: projectId,
       path_with_namespace: repoPath,
     },
     object_attributes: {
@@ -109,6 +117,7 @@ if (isGitLab) {
   );
   console.log(`  Target: http://localhost:${port}/webhook/gitlab`);
   console.log(`  Repo:   ${repoPath}`);
+  console.log(`  Project ID: ${projectId}`);
   console.log();
 
   sendRequest("/webhook/gitlab", payload, {
