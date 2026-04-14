@@ -1,7 +1,8 @@
 // simulate-webhook.ts — Send a fake webhook to the local server
 // Usage:
-//   GitHub: npx ts-node test/simulate-webhook.ts <pr-number> [owner/repo]
-//   GitLab: npx ts-node test/simulate-webhook.ts --gitlab <mr-iid> [namespace/repo]
+//   GitHub:       npx ts-node test/simulate-webhook.ts <pr-number> [owner/repo]
+//   GitLab MR:    npx ts-node test/simulate-webhook.ts --gitlab <mr-iid> [--project-id <id>] [namespace/repo]
+//   GitLab Issue: npx ts-node test/simulate-webhook.ts --gitlab-issue <issue-iid> [--project-id <id>] [--target <branch>] [namespace/repo]
 
 import crypto from "crypto";
 import http from "http";
@@ -10,8 +11,9 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const args = process.argv.slice(2);
+const isGitLabIssue = args[0] === "--gitlab-issue";
 const isGitLab = args[0] === "--gitlab";
-if (isGitLab) args.shift();
+if (isGitLab || isGitLabIssue) args.shift();
 
 // Extract --project-id <id> from args
 let projectId = 12345;
@@ -21,12 +23,21 @@ if (pidIdx !== -1) {
   args.splice(pidIdx, 2);
 }
 
+// Extract --target <branch> from args (for issue simulation)
+let targetBranch = "develop";
+const targetIdx = args.indexOf("--target");
+if (targetIdx !== -1) {
+  targetBranch = args[targetIdx + 1];
+  args.splice(targetIdx, 2);
+}
+
 const mrNumber = parseInt(args[0], 10);
 if (!mrNumber || isNaN(mrNumber)) {
   console.error(
     "Usage:\n" +
-      "  GitHub: ts-node test/simulate-webhook.ts <pr-number> [owner/repo]\n" +
-      "  GitLab: ts-node test/simulate-webhook.ts --gitlab <mr-iid> [--project-id <id>] [namespace/repo]"
+      "  GitHub:       ts-node test/simulate-webhook.ts <pr-number> [owner/repo]\n" +
+      "  GitLab MR:    ts-node test/simulate-webhook.ts --gitlab <mr-iid> [--project-id <id>] [namespace/repo]\n" +
+      "  GitLab Issue: ts-node test/simulate-webhook.ts --gitlab-issue <issue-iid> [--project-id <id>] [--target <branch>] [namespace/repo]"
   );
   process.exit(1);
 }
@@ -73,8 +84,68 @@ function sendRequest(
   req.end();
 }
 
-if (isGitLab) {
-  // --- GitLab simulation ---
+if (isGitLabIssue) {
+  // --- GitLab Issue Hook simulation ---
+  const secret = process.env.GITLAB_WEBHOOK_SECRET;
+  if (!secret) {
+    console.error("GITLAB_WEBHOOK_SECRET is not set in .env");
+    process.exit(1);
+  }
+
+  let repoPath = args[1];
+  if (!repoPath) {
+    const reposRaw = process.env.GITLAB_REPOS || "";
+    const firstRepo = reposRaw.split(",")[0]?.trim();
+    if (!firstRepo) {
+      console.error("No repo specified and GITLAB_REPOS is not set in .env");
+      process.exit(1);
+    }
+    repoPath = firstRepo;
+  }
+
+  const coderLabel = process.env.GITLAB_CODER_LABEL || "claude-code";
+  const labels = [
+    { id: 1, title: coderLabel, color: "#0075ca" },
+    { id: 2, title: `target:${targetBranch}`, color: "#e4e669" },
+  ];
+
+  const payload = JSON.stringify({
+    object_kind: "issue",
+    event_type: "issue",
+    user: { username: "test-author" },
+    project: {
+      id: projectId,
+      path_with_namespace: repoPath,
+    },
+    object_attributes: {
+      iid: mrNumber,
+      title: `Test issue #${mrNumber}`,
+      description: "This is a simulated issue for testing the Claude coding agent.\n\nPlease add a new file `test/hello.dart` with a simple hello world Dart function.",
+      action: "update",
+      labels,
+    },
+    changes: {
+      labels: {
+        previous: [], // simulates the label being freshly added
+        current: labels,
+      },
+    },
+  });
+
+  console.log(`Sending Issue Hook webhook for issue #${mrNumber}...`);
+  console.log(`  Target: http://localhost:${port}/webhook/gitlab`);
+  console.log(`  Repo:   ${repoPath}`);
+  console.log(`  Project ID: ${projectId}`);
+  console.log(`  Trigger label: "${coderLabel}"`);
+  console.log(`  MR target branch: "${targetBranch}"`);
+  console.log();
+
+  sendRequest("/webhook/gitlab", payload, {
+    "X-Gitlab-Event": "Issue Hook",
+    "X-Gitlab-Token": secret,
+  });
+} else if (isGitLab) {
+  // --- GitLab MR simulation ---
   const secret = process.env.GITLAB_WEBHOOK_SECRET;
   if (!secret) {
     console.error("GITLAB_WEBHOOK_SECRET is not set in .env");
@@ -107,7 +178,7 @@ if (isGitLab) {
       title: `Test MR !${mrNumber}`,
       action: "open",
       source_branch: `feature/test-branch-${mrNumber}`,
-      target_branch: "main",
+      target_branch: "develop",
       author_id: 1,
     },
   });
@@ -160,7 +231,7 @@ if (isGitLab) {
       number: mrNumber,
       title: `Test PR #${mrNumber}`,
       user: { login: "test-author" },
-      base: { ref: "main" },
+      base: { ref: "develop" },
       head: { ref: `feature/test-branch-${mrNumber}` },
     },
     repository: {

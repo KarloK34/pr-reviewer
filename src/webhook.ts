@@ -7,6 +7,7 @@ import express, { Request, Response, Router } from "express";
 import { Config } from "./config";
 import { handlePRReview, PREvent } from "./github";
 import { handleMRReview, MREvent } from "./gitlab";
+import { handleIssueAgent } from "./issue-coder";
 
 /** Verify the GitHub webhook signature using HMAC SHA-256. */
 function verifyGitHubSignature(
@@ -153,7 +154,53 @@ export function createWebhookRouter(config: Config): Router {
       return;
     }
 
-    // Only process Merge Request Hook events
+    // Handle Issue Hook — trigger the coding agent when the coder label is added
+    if (gitlabEvent === "Issue Hook") {
+      if (!config.gitlabCoder) {
+        res.status(200).json({ ignored: true, reason: "coder not enabled" });
+        return;
+      }
+
+      const labels: Array<{ title: string }> =
+        payload.object_attributes?.labels ?? [];
+      const previousLabels: Array<{ title: string }> =
+        payload.changes?.labels?.previous ?? [];
+
+      const coderLabel = config.gitlabCoder.label;
+      const labelJustAdded =
+        labels.some((l) => l.title === coderLabel) &&
+        !previousLabels.some((l) => l.title === coderLabel);
+
+      if (!labelJustAdded) {
+        res
+          .status(200)
+          .json({ ignored: true, reason: "coder label not newly added" });
+        return;
+      }
+
+      // Determine target branch: "target:<branch>" label takes priority over env var default
+      const targetLabel = labels.find((l) => l.title.startsWith("target:"));
+      const targetBranch = targetLabel
+        ? targetLabel.title.split(":")[1].trim()
+        : config.gitlabCoder.targetBranch;
+
+      const issueIid: number = payload.object_attributes.iid;
+      console.log(
+        `[webhook/gitlab] Issue #${issueIid} labeled "${coderLabel}" → coding agent (target: ${targetBranch})`
+      );
+
+      res.status(200).json({ received: true, issue: issueIid, targetBranch });
+
+      handleIssueAgent(payload, targetBranch, config).catch((err) => {
+        console.error(
+          `[webhook/gitlab] Error in coding agent for issue #${issueIid}:`,
+          err
+        );
+      });
+      return;
+    }
+
+    // Only process Merge Request Hook events (all other events are ignored)
     if (gitlabEvent !== "Merge Request Hook") {
       console.log(`[webhook/gitlab] Ignoring event: ${gitlabEvent}`);
       res

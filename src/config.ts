@@ -19,6 +19,13 @@ export interface GitLabConfig {
   repos: string[]; // "namespace/repo" format
 }
 
+export interface GitLabCoderConfig {
+  label: string;          // Label that triggers the coding agent (default: "claude-code")
+  targetBranch: string;   // Fallback MR target branch when no "target:*" label is set (default: "develop")
+  cloneToken: string;     // Token used for git clone/push (defaults to gitlab.accessToken)
+  reviewerIds: number[];  // GitLab user IDs to add as reviewers on generated MRs
+}
+
 export interface Config {
   port: number;
   anthropicApiKey: string;
@@ -27,6 +34,7 @@ export interface Config {
   githubPrivateKey: string;
   githubRepos: RepoRef[];
   gitlab: GitLabConfig | null;
+  gitlabCoder: GitLabCoderConfig | null;
 }
 
 function requireEnv(name: string): string {
@@ -121,6 +129,24 @@ function loadGitLabConfig(): GitLabConfig | null {
   };
 }
 
+function loadGitLabCoderConfig(
+  gitlab: GitLabConfig | null
+): GitLabCoderConfig | null {
+  if (!gitlab) return null;
+
+  const reviewerIds = (process.env.GITLAB_CODER_REVIEWER_IDS || "")
+    .split(",")
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => !isNaN(n));
+
+  return {
+    label: process.env.GITLAB_CODER_LABEL || "claude-code",
+    targetBranch: process.env.GITLAB_CODER_TARGET_BRANCH || "develop",
+    cloneToken: process.env.GITLAB_CLONE_TOKEN || gitlab.accessToken,
+    reviewerIds,
+  };
+}
+
 /** Load and validate all required environment variables. */
 export function loadConfig(): Config {
   const anthropicApiKey = requireEnv("ANTHROPIC_API_KEY");
@@ -144,10 +170,14 @@ export function loadConfig(): Config {
 
   const githubRepos = parseRepos(githubReposRaw, "GITHUB_REPOS");
   const gitlab = loadGitLabConfig();
+  const gitlabCoder = loadGitLabCoderConfig(gitlab);
 
   if (gitlab) {
     console.log(
       `[config] GitLab support enabled for ${gitlab.repos.length} repo(s)`
+    );
+    console.log(
+      `[config] GitLab issue coder enabled (trigger label: "${gitlabCoder!.label}", reviewers: [${gitlabCoder!.reviewerIds.join(", ") || "none"}])`
     );
   }
 
@@ -159,5 +189,6 @@ export function loadConfig(): Config {
     githubPrivateKey,
     githubRepos,
     gitlab,
+    gitlabCoder,
   };
 }

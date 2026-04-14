@@ -4,3 +4,4 @@ logs/
 .env
 *.pem
 flutter-ai-pr-reviewer/
+.vscode/
