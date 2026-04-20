@@ -9,7 +9,7 @@ jobs:
   review:
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: KarloK34/pr-reviewer@pr-reviewer-v2
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
