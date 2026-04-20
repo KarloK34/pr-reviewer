@@ -1,0 +1,27 @@
+name: 'PR Reviewer'
+description: 'AI-powered PR review using Claude Sonnet'
+inputs:
+  anthropic-api-key:
+    description: 'Anthropic API key'
+    required: true
+  system-prompt-file:
+    description: 'Path (relative to target repo root) to a markdown file containing the Claude system prompt'
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    - name: Install dependencies
+      shell: bash
+      run: npm ci
+      working-directory: ${{ github.action_path }}
+    - name: Run PR review
+      shell: bash
+      run: npx ts-node src/run-github.ts
+      working-directory: ${{ github.action_path }}
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        GITHUB_TOKEN: ${{ github.token }}
+        SYSTEM_PROMPT_FILE: ${{ github.workspace }}/${{ inputs.system-prompt-file }}

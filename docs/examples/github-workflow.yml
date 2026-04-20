@@ -1,0 +1,15 @@
+name: AI PR Review
+on:
+  pull_request:
+    types: [opened, synchronize]
+permissions:
+  pull-requests: write
+jobs:
+  review:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: KarloK34/pr-reviewer@pr-reviewer-v2
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          system-prompt-file: .github/pr-reviewer-prompt.md

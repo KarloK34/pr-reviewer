@@ -1,6 +1,3 @@
-// gitlab.ts — GitLab API interactions
-// Uses the GitLab REST API with a personal/project access token.
-
 import http from "http";
 import https from "https";
 import { GitLabConfig } from "./config";
@@ -80,9 +77,7 @@ async function getMRFiles(
   const { statusCode, data } = await gitlabRequest("GET", url, gitlabConfig.accessToken);
 
   if (statusCode !== 200) {
-    throw new Error(
-      `GitLab API error fetching MR changes: ${statusCode} ${data}`
-    );
+    throw new Error(`GitLab API error fetching MR changes: ${statusCode} ${data}`);
   }
 
   const parsed = JSON.parse(data);
@@ -96,11 +91,7 @@ async function getMRFiles(
 
     files.push({
       filename,
-      status: mapDiffStatus(
-        change.new_file,
-        change.deleted_file,
-        change.renamed_file
-      ),
+      status: mapDiffStatus(change.new_file, change.deleted_file, change.renamed_file),
       patch: change.diff,
     });
   }
@@ -117,17 +108,10 @@ async function postMRComment(
 ): Promise<void> {
   const url = `${gitlabConfig.url}/api/v4/projects/${projectId}/merge_requests/${mrIid}/notes`;
   const payload = JSON.stringify({ body });
-  const { statusCode, data } = await gitlabRequest(
-    "POST",
-    url,
-    gitlabConfig.accessToken,
-    payload
-  );
+  const { statusCode, data } = await gitlabRequest("POST", url, gitlabConfig.accessToken, payload);
 
   if (statusCode !== 201) {
-    throw new Error(
-      `GitLab API error posting MR comment: ${statusCode} ${data}`
-    );
+    throw new Error(`GitLab API error posting MR comment: ${statusCode} ${data}`);
   }
 }
 
@@ -146,29 +130,20 @@ function toFileDiffs(files: MRFile[]): FileDiff[] {
 /** Orchestrate the full MR review: fetch files, run AI review, post comment. */
 export async function handleMRReview(
   event: MREvent,
-  gitlabConfig: GitLabConfig
+  gitlabConfig: GitLabConfig,
+  systemPrompt: string
 ): Promise<void> {
   try {
-    console.log(
-      `[gitlab] Starting review for MR !${event.iid} in ${event.projectPath}`
-    );
+    console.log(`[gitlab] Starting review for MR !${event.iid} in ${event.projectPath}`);
 
-    const files = await getMRFiles(
-      event.projectId,
-      event.iid,
-      gitlabConfig
-    );
+    const files = await getMRFiles(event.projectId, event.iid, gitlabConfig);
 
     if (files.length === 0) {
-      console.log(
-        `[gitlab] MR !${event.iid}: no reviewable files, skipping`
-      );
+      console.log(`[gitlab] MR !${event.iid}: no reviewable files, skipping`);
       return;
     }
 
-    console.log(
-      `[gitlab] MR !${event.iid}: reviewing ${files.length} file(s)`
-    );
+    console.log(`[gitlab] MR !${event.iid}: reviewing ${files.length} file(s)`);
 
     const fileDiffs = toFileDiffs(files);
     const prContext: PRContext = {
@@ -178,17 +153,13 @@ export async function handleMRReview(
       headBranch: event.sourceBranch,
       pullNumber: event.iid,
     };
-    const review = await reviewCode(prContext, fileDiffs);
+    const review = await reviewCode(prContext, fileDiffs, systemPrompt);
 
-    await postMRComment(
-      event.projectId,
-      event.iid,
-      review,
-      gitlabConfig
-    );
+    await postMRComment(event.projectId, event.iid, review, gitlabConfig);
 
     console.log(`[gitlab] MR !${event.iid}: review posted successfully`);
   } catch (err) {
     console.error(`[gitlab] MR !${event.iid}: review failed`, err);
+    throw err;
   }
 }

@@ -1,63 +1,24 @@
-// github.ts — GitHub API interactions
-// Authenticates as a GitHub App using manual JWT + installation token flow.
-// Uses @octokit/rest for all API calls.
-
-import jwt from "jsonwebtoken";
 import { Octokit } from "@octokit/rest";
-import { loadConfig } from "./config";
 import { reviewCode, PRContext, FileDiff } from "./reviewer";
 import { isIgnoredFile, MAX_PATCH_LENGTH } from "./filter";
 
-export interface PREvent {
-  number: number;
-  title: string;
-  author: string;
+export interface PRRunConfig {
+  githubToken: string;
+  anthropicApiKey: string;
+  systemPrompt: string;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  prTitle: string;
+  prAuthor: string;
   baseBranch: string;
   headBranch: string;
-  repoFullName: string;
 }
 
-export interface PRFile {
+interface PRFile {
   filename: string;
   status: string;
   patch: string;
-}
-
-/** Create a short-lived JWT to authenticate as the GitHub App. */
-function createAppJWT(): string {
-  const config = loadConfig();
-  const now = Math.floor(Date.now() / 1000);
-
-  return jwt.sign(
-    {
-      iat: now - 60, // issued 60s in the past to account for clock drift
-      exp: now + 10 * 60, // expires in 10 minutes (max allowed)
-      iss: config.githubAppId,
-    },
-    config.githubPrivateKey,
-    { algorithm: "RS256" }
-  );
-}
-
-/** Get an authenticated Octokit instance for the given repository installation. */
-async function getInstallationOctokit(
-  owner: string,
-  repo: string
-): Promise<Octokit> {
-  const appJwt = createAppJWT();
-
-  // Use the JWT to find the installation for this repo
-  const appOctokit = new Octokit({ auth: appJwt });
-  const { data: installation } =
-    await appOctokit.rest.apps.getRepoInstallation({ owner, repo });
-
-  // Exchange the JWT for a scoped installation access token
-  const { data: tokenData } =
-    await appOctokit.rest.apps.createInstallationAccessToken({
-      installation_id: installation.id,
-    });
-
-  return new Octokit({ auth: tokenData.token });
 }
 
 /** Fetch the list of changed files for a PR, filtering out non-reviewable files. */
@@ -129,40 +90,35 @@ function toFileDiffs(files: PRFile[]): FileDiff[] {
 }
 
 /** Orchestrate the full PR review: fetch diff, run AI review, post result. */
-export async function handlePRReview(event: PREvent): Promise<void> {
-  const [owner, repo] = event.repoFullName.split("/");
-
+export async function handlePRReview(config: PRRunConfig): Promise<void> {
   try {
-    console.log(`[github] Starting review for PR #${event.number}`);
+    console.log(`[github] Starting review for PR #${config.prNumber}`);
 
-    const octokit = await getInstallationOctokit(owner, repo);
-    const files = await getPRFiles(octokit, owner, repo, event.number);
+    const octokit = new Octokit({ auth: config.githubToken });
+    const files = await getPRFiles(octokit, config.owner, config.repo, config.prNumber);
 
     if (files.length === 0) {
-      console.log(
-        `[github] PR #${event.number}: no reviewable files, skipping`
-      );
+      console.log(`[github] PR #${config.prNumber}: no reviewable files, skipping`);
       return;
     }
 
-    console.log(
-      `[github] PR #${event.number}: reviewing ${files.length} file(s)`
-    );
+    console.log(`[github] PR #${config.prNumber}: reviewing ${files.length} file(s)`);
 
     const fileDiffs = toFileDiffs(files);
     const prContext: PRContext = {
-      title: event.title,
-      author: event.author,
-      baseBranch: event.baseBranch,
-      headBranch: event.headBranch,
-      pullNumber: event.number,
+      title: config.prTitle,
+      author: config.prAuthor,
+      baseBranch: config.baseBranch,
+      headBranch: config.headBranch,
+      pullNumber: config.prNumber,
     };
-    const review = await reviewCode(prContext, fileDiffs);
+    const review = await reviewCode(prContext, fileDiffs, config.systemPrompt);
 
-    await postReviewComment(octokit, owner, repo, event.number, review);
+    await postReviewComment(octokit, config.owner, config.repo, config.prNumber, review);
 
-    console.log(`[github] PR #${event.number}: review posted successfully`);
+    console.log(`[github] PR #${config.prNumber}: review posted successfully`);
   } catch (err) {
-    console.error(`[github] PR #${event.number}: review failed`, err);
+    console.error(`[github] PR #${config.prNumber}: review failed`, err);
+    throw err;
   }
 }
