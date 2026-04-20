@@ -11,7 +11,7 @@
 #   .gitlab/pr-reviewer-prompt.md  — your project-specific Claude system prompt
 
 ai-pr-review:
-  image: node:20-alpine
+  image: node:24-alpine
   stage: .pre
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -27,4 +27,4 @@ ai-pr-review:
     - git clone --branch pr-reviewer-v2 https://github.com/KarloK34/pr-reviewer.git $CI_PROJECT_DIR/.reviewer
     - cd $CI_PROJECT_DIR/.reviewer && npm ci
   script:
-    - cd $CI_PROJECT_DIR/.reviewer && npx ts-node src/run-gitlab.ts
+    - cd $CI_PROJECT_DIR/.reviewer && npm run run:gitlab
