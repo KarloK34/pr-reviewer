@@ -1,7 +1,7 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 import * as fs from "fs";
-import { handlePRReview } from "./github";
+import { handlePRReview } from "./github.js";
 
 async function run(): Promise<void> {
   const pr = github.context.payload.pull_request;

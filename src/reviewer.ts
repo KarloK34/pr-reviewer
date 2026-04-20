@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { loadConfig } from "./config";
+import { loadConfig } from "./config.js";
 
 export interface PRContext {
   title: string;

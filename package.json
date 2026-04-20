@@ -2,11 +2,12 @@
   "name": "pr-reviewer",
   "version": "1.0.0",
   "description": "Automated PR/MR reviewer powered by Claude AI",
+  "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "run:github": "npx ts-node src/run-github.ts",
-    "run:gitlab": "npx ts-node src/run-gitlab.ts"
+    "run:github": "tsx src/run-github.ts",
+    "run:gitlab": "tsx src/run-gitlab.ts"
   },
   "keywords": [],
   "author": "",
@@ -16,13 +17,11 @@
     "@actions/github": "^9.1.0",
     "@actions/http-client": "^4.0.0",
     "@anthropic-ai/sdk": "^0.52.0",
-    "@octokit/rest": "^20.1.2",
     "dotenv": "^16.4.7"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
-    "ts-node": "^10.9.2",
-    "ts-node-dev": "^2.0.0",
+    "tsx": "^4.19.4",
     "typescript": "^5.8.2"
   }
 }

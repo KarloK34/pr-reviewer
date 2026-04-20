@@ -1,6 +1,8 @@
-import { Octokit } from "@octokit/rest";
-import { reviewCode, PRContext, FileDiff } from "./reviewer";
-import { isIgnoredFile, MAX_PATCH_LENGTH } from "./filter";
+import * as actionsGitHub from "@actions/github";
+import { reviewCode, PRContext, FileDiff } from "./reviewer.js";
+import { isIgnoredFile, MAX_PATCH_LENGTH } from "./filter.js";
+
+type GitHubClient = ReturnType<typeof actionsGitHub.getOctokit>;
 
 export interface PRRunConfig {
   githubToken: string;
@@ -23,7 +25,7 @@ interface PRFile {
 
 /** Fetch the list of changed files for a PR, filtering out non-reviewable files. */
 async function getPRFiles(
-  octokit: Octokit,
+  octokit: GitHubClient,
   owner: string,
   repo: string,
   pullNumber: number
@@ -62,7 +64,7 @@ async function getPRFiles(
 
 /** Post a PR review comment with the given body. */
 async function postReviewComment(
-  octokit: Octokit,
+  octokit: GitHubClient,
   owner: string,
   repo: string,
   pullNumber: number,
@@ -94,7 +96,7 @@ export async function handlePRReview(config: PRRunConfig): Promise<void> {
   try {
     console.log(`[github] Starting review for PR #${config.prNumber}`);
 
-    const octokit = new Octokit({ auth: config.githubToken });
+    const octokit = actionsGitHub.getOctokit(config.githubToken);
     const files = await getPRFiles(octokit, config.owner, config.repo, config.prNumber);
 
     if (files.length === 0) {

@@ -1,8 +1,8 @@
 import http from "http";
 import https from "https";
-import { GitLabConfig } from "./config";
-import { reviewCode, PRContext, FileDiff } from "./reviewer";
-import { isIgnoredFile, MAX_PATCH_LENGTH } from "./filter";
+import { GitLabConfig } from "./config.js";
+import { reviewCode, PRContext, FileDiff } from "./reviewer.js";
+import { isIgnoredFile, MAX_PATCH_LENGTH } from "./filter.js";
 
 export interface MREvent {
   iid: number;

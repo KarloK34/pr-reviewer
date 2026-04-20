@@ -1,5 +1,5 @@
 import * as fs from "fs";
-import { handleMRReview } from "./gitlab";
+import { handleMRReview } from "./gitlab.js";
 
 async function run(): Promise<void> {
   if (!process.env.CI_MERGE_REQUEST_IID) {
