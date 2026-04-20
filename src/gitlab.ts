@@ -2,7 +2,7 @@ import http from "http";
 import https from "https";
 import { GitLabConfig } from "./config.js";
 import { reviewCode, PRContext, FileDiff } from "./reviewer.js";
-import { isIgnoredFile, MAX_PATCH_LENGTH } from "./filter.js";
+import { isIgnoredFile, MAX_TOTAL_DIFF_LENGTH } from "./filter.js";
 
 export interface MREvent {
   iid: number;
@@ -115,16 +115,13 @@ async function postMRComment(
   }
 }
 
-/** Truncate patches and convert to FileDiffs for the reviewer. */
+/** Convert MRFiles to FileDiffs, throwing if the total diff exceeds the budget. */
 function toFileDiffs(files: MRFile[]): FileDiff[] {
-  return files.map((file) => ({
-    filename: file.filename,
-    status: file.status,
-    patch:
-      file.patch.length > MAX_PATCH_LENGTH
-        ? file.patch.slice(0, MAX_PATCH_LENGTH) + "\n... [truncated]"
-        : file.patch,
-  }));
+  const total = files.reduce((sum, f) => sum + f.patch.length, 0);
+  if (total > MAX_TOTAL_DIFF_LENGTH) {
+    throw new Error(`Diff too large to review (${total} chars across ${files.length} files; limit is ${MAX_TOTAL_DIFF_LENGTH})`);
+  }
+  return files.map(({ filename, status, patch }) => ({ filename, status, patch }));
 }
 
 /** Orchestrate the full MR review: fetch files, run AI review, post comment. */

@@ -1,6 +1,6 @@
 // filter.ts — Shared file filtering logic for GitHub and GitLab
 
-export const MAX_PATCH_LENGTH = 3000;
+export const MAX_TOTAL_DIFF_LENGTH = 100_000;
 
 const IGNORED_EXTENSIONS = [
   ".g.dart",

@@ -1,6 +1,6 @@
 import * as actionsGitHub from "@actions/github";
 import { reviewCode, PRContext, FileDiff } from "./reviewer.js";
-import { isIgnoredFile, MAX_PATCH_LENGTH } from "./filter.js";
+import { isIgnoredFile, MAX_TOTAL_DIFF_LENGTH } from "./filter.js";
 
 type GitHubClient = ReturnType<typeof actionsGitHub.getOctokit>;
 
@@ -79,16 +79,13 @@ async function postReviewComment(
   });
 }
 
-/** Truncate patches and convert PRFiles to FileDiffs for the reviewer. */
+/** Convert PRFiles to FileDiffs, throwing if the total diff exceeds the budget. */
 function toFileDiffs(files: PRFile[]): FileDiff[] {
-  return files.map((file) => ({
-    filename: file.filename,
-    status: file.status,
-    patch:
-      file.patch.length > MAX_PATCH_LENGTH
-        ? file.patch.slice(0, MAX_PATCH_LENGTH) + "\n... [truncated]"
-        : file.patch,
-  }));
+  const total = files.reduce((sum, f) => sum + f.patch.length, 0);
+  if (total > MAX_TOTAL_DIFF_LENGTH) {
+    throw new Error(`Diff too large to review (${total} chars across ${files.length} files; limit is ${MAX_TOTAL_DIFF_LENGTH})`);
+  }
+  return files.map(({ filename, status, patch }) => ({ filename, status, patch }));
 }
 
 /** Orchestrate the full PR review: fetch diff, run AI review, post result. */
