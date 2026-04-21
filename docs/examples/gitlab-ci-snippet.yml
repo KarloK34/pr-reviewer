@@ -13,14 +13,10 @@
 ai-pr-review:
   stage: .pre
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   variables:
     GIT_STRATEGY: fetch
     SYSTEM_PROMPT_FILE: $CI_PROJECT_DIR/.gitlab/pr-reviewer-prompt.md
-  cache:
-    key: pr-reviewer-deps
-    paths:
-      - .reviewer/node_modules/
   before_script:
     - git clone --branch pr-reviewer-v2 https://github.com/KarloK34/pr-reviewer.git $CI_PROJECT_DIR/.reviewer
     - cd $CI_PROJECT_DIR/.reviewer && npm ci
