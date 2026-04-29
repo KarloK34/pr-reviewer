@@ -1,27 +1,48 @@
 name: 'PR Reviewer'
-description: 'AI-powered PR review using Claude Sonnet'
+description: 'AI-powered PR review using Claude'
 inputs:
   anthropic-api-key:
     description: 'Anthropic API key'
     required: true
-  system-prompt-file:
-    description: 'Path (relative to target repo root) to a markdown file containing the Claude system prompt'
-    required: true
+  jira-token:
+    description: 'Jira API token (optional, for fetching linked Jira tickets)'
+    required: false
+    default: ''
+  jira-base-url:
+    description: 'Jira base URL, e.g. https://mycompany.atlassian.net (required if jira-token is set)'
+    required: false
+    default: ''
 runs:
   using: 'composite'
   steps:
-    - uses: actions/setup-node@v6
-      with:
-        node-version: '24'
-    - name: Install dependencies
+    - name: Install Claude CLI
       shell: bash
-      run: npm ci
-      working-directory: ${{ github.action_path }}
+      run: which claude || npm install -g @anthropic-ai/claude-code
     - name: Run PR review
       shell: bash
-      run: npm run run:github
-      working-directory: ${{ github.action_path }}
+      run: |
+        claude \
+          "Review PR #${PR_NUMBER} titled '${PR_TITLE}' in repo ${GITHUB_REPOSITORY} at ${GITHUB_SERVER_URL}. \
+           Author: ${PR_AUTHOR}. Branch: ${HEAD_BRANCH} → ${BASE_BRANCH}. \
+           GITHUB_TOKEN is available in env for GitHub API calls. \
+           Fetch the PR diff via the GitHub REST API, then read relevant codebase files for context \
+           (e.g. files imported by or related to the changed files). \
+           Scan the PR title and branch name for any Jira ticket IDs matching the pattern [A-Z]+-[0-9]+ \
+           (a project may reference multiple boards). \
+           If JIRA_TOKEN and JIRA_BASE_URL are non-empty, fetch each referenced Jira ticket. \
+           Then post a detailed code review as a PR review comment via the GitHub REST API." \
+          --system-prompt-file .github/pr-reviewer-prompt.md \
+          --permission-mode bypassPermissions \
+          --allowedTools "Read Bash" \
+          --max-turns 15 \
+          --print
       env:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         GITHUB_TOKEN: ${{ github.token }}
-        SYSTEM_PROMPT_FILE: ${{ github.workspace }}/${{ inputs.system-prompt-file }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_TITLE: ${{ github.event.pull_request.title }}
+        PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+        JIRA_TOKEN: ${{ inputs.jira-token }}
+        JIRA_BASE_URL: ${{ inputs.jira-base-url }}

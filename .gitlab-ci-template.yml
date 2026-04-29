@@ -1,18 +1,28 @@
 ai-pr-review:
-  image: node:24-alpine
   stage: .pre
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   variables:
     GIT_STRATEGY: fetch
-    SYSTEM_PROMPT_FILE: $CI_PROJECT_DIR/.gitlab/pr-reviewer-prompt.md
-  cache:
-    key: pr-reviewer-deps
-    paths:
-      - .reviewer/node_modules/
   before_script:
-    - apk add --no-cache git
-    - git clone --branch pr-reviewer-v2 https://github.com/KarloK34/pr-reviewer.git $CI_PROJECT_DIR/.reviewer
-    - cd $CI_PROJECT_DIR/.reviewer && npm ci
+    - which claude || npm install -g @anthropic-ai/claude-code
   script:
-    - cd $CI_PROJECT_DIR/.reviewer && npm run run:gitlab
+    - >
+      claude
+      "Review MR !${CI_MERGE_REQUEST_IID} titled '${CI_MERGE_REQUEST_TITLE}'
+      on project ${CI_PROJECT_PATH} at ${CI_SERVER_URL}.
+      Branch: ${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME} → ${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}.
+      Author: ${GITLAB_USER_LOGIN}.
+      GITLAB_ACCESS_TOKEN is available in env for GitLab API calls.
+      Fetch the MR diff, read relevant files from the codebase for context,
+      then provide a detailed code review and post it as an MR comment."
+      --system-prompt-file .gitlab/pr-reviewer-prompt.md
+      --permission-mode bypassPermissions
+      --allowedTools "Read Bash"
+      --max-turns 15
+      --print
+  # Required CI/CD variables:
+  #   ANTHROPIC_API_KEY        — Anthropic API key (masked)
+  #   GITLAB_ACCESS_TOKEN      — Project Access Token with api scope (masked, non-protected)
+  # Also required in the repo:
+  #   .gitlab/pr-reviewer-prompt.md — project-specific Claude system prompt

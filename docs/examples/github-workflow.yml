@@ -10,7 +10,8 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v6
-      - uses: KarloK34/pr-reviewer@pr-reviewer-v2
+      - uses: KarloK34/pr-reviewer@pr-reviewer-v3
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          system-prompt-file: .github/pr-reviewer-prompt.md
+          jira-token: ${{ secrets.JIRA_TOKEN }}
+          jira-base-url: ${{ secrets.JIRA_BASE_URL }}

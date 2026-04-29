@@ -8,17 +8,35 @@
 #                           so it works on feature branch MR pipelines)
 #
 # Also add to your repo:
-#   .gitlab/pr-reviewer-prompt.md  — your project-specific Claude system prompt
+#   .gitlab/pr-reviewer-prompt.md  — your project-specific Claude system prompt.
+#                                    The prompt should instruct Claude to fetch the MR diff
+#                                    via `curl` (using GITLAB_ACCESS_TOKEN) and post the
+#                                    review as an MR note via `curl`.
+#
+# Runner note: the `claude` CLI is installed via npm if not already present on the runner.
+# If using GitLab shared runners, add `image: node:24-alpine` to the job and update
+# before_script to also install any required system packages (e.g. git, curl).
 
 ai-pr-review:
   stage: .pre
   rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   variables:
     GIT_STRATEGY: fetch
-    SYSTEM_PROMPT_FILE: $CI_PROJECT_DIR/.gitlab/pr-reviewer-prompt.md
   before_script:
-    - git clone --branch pr-reviewer-v2 https://github.com/KarloK34/pr-reviewer.git $CI_PROJECT_DIR/.reviewer
-    - cd $CI_PROJECT_DIR/.reviewer && npm ci
+    - which claude || npm install -g @anthropic-ai/claude-code
   script:
-    - cd $CI_PROJECT_DIR/.reviewer && npm run run:gitlab
+    - >
+      claude
+      "Review MR !${CI_MERGE_REQUEST_IID} titled '${CI_MERGE_REQUEST_TITLE}'
+      on project ${CI_PROJECT_PATH} at ${CI_SERVER_URL}.
+      Branch: ${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME} → ${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}.
+      Author: ${GITLAB_USER_LOGIN}.
+      GITLAB_ACCESS_TOKEN is available in env for GitLab API calls.
+      Fetch the MR diff, read relevant files from the codebase for context,
+      then provide a detailed code review and post it as an MR comment."
+      --system-prompt-file .gitlab/pr-reviewer-prompt.md
+      --permission-mode bypassPermissions
+      --allowedTools "Read Bash"
+      --max-turns 15
+      --print
